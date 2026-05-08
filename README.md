@@ -113,3 +113,16 @@ Thermal: GPU Core temperature (°C).
 Clocks: Graphics and Memory clock speeds (MHz).
 
 PCIe Status: Current Link Generation and Width.
+
+
+🕰️ Historical Data Integrity (Zabbix Trapper)
+
+Unlike standard Zabbix items that timestamp data upon arrival, this solution utilizes Zabbix Trapper items. This is a crucial architectural choice for two reasons:
+
+
+Original Timestamp Preservation: The Python script extracts the exact timestamp from the Cisco Intersight telemetry records. 
+When pushing data to Zabbix, it uses the zabbix_sender timestamp flag (-T). 
+This ensures that the Zabbix graphs perfectly align with the Intersight timeline, even if the script runs on a delayed schedule.
+
+Backfilling Support: Because we preserve the original timestamps, the script can retrieve and "backfill" multiple data points from a single query (e.g., fetching 60 minutes of 10-minute buckets). 
+Zabbix will correctly plot all six points at their respective historical times rather than bunching them up at the current time.
