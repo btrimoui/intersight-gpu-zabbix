@@ -87,4 +87,5 @@ Power: Real-time and average power draw (Watts).
 Thermal: GPU Core temperature (°C).
 
 Clocks: Graphics and Memory clock speeds (MHz).
+
 PCIe Status: Current Link Generation and Width.
