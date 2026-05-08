@@ -115,7 +115,7 @@ Clocks: Graphics and Memory clock speeds (MHz).
 PCIe Status: Current Link Generation and Width.
 
 
-🕰️ Historical Data Integrity (Zabbix Trapper)
+🛡️🕒 Historical Data Integrity (Zabbix Trapper)
 
 Unlike standard Zabbix items that timestamp data upon arrival, this solution utilizes Zabbix Trapper items. This is a crucial architectural choice for two reasons:
 
