@@ -19,7 +19,7 @@ CONFIG = {
     "zabbix_sender": "/usr/bin/zabbix_sender",
     "zabbix_server": "127.0.0.1",
     "zabbix_port": 10051,
-    "zabbix_host": "Cisco-Intersight-Lab",
+    "zabbix_host": "",
 
     "window_minutes": 60,
     "granularity_minutes": 10,
