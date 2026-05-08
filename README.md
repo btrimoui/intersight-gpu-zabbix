@@ -12,8 +12,26 @@ The solution automates the discovery and performance tracking of GPU assets. It 
 Key Features
 
 Backend-Calculated Precision: Utilizes Intersight’s internal Druid engine to provide mathematically accurate averages (Sum/Count logic), ensuring idle time is correctly represented without "snapshot bias."
+
 Intelligent Discovery: Automatically detects single-controller (e.g., L40S) and multi-controller (e.g., A16) GPUs, mapping physical slot IDs (e.g., PCIe-Node2-GPU1) to their respective controllers.
+
 License Aware: Compatible with both Intersight Essentials (10-min interval) and Advantage (1-min interval) tiers.
+
+The precision of your monitoring depends on your Cisco Intersight license tier. You must align the granularity_minutes setting in the gpu_collector.py script with your license to ensure data consistency:
+
+
+Intersight Essentials (Default):
+Interval: 10 minutes.
+Configuration: Set "granularity_minutes": 10 in the CONFIG dictionary.
+
+Note: Data is aggregated locally by the Device Connector before being sent to the cloud.
+
+Intersight Advantage:
+Interval: 1 minute.
+
+Configuration: Change "granularity_minutes": 1 in the CONFIG dictionary.
+Benefit: This allows for high-resolution 1-minute charts in Zabbix, perfect for identifying short-lived performance spikes.
+
 Zabbix 7.x Native: Fully compatible with Zabbix 7.0, utilizing native JSON preprocessing and Trapper items for efficient data ingestion.
 
 
