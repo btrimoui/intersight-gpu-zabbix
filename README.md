@@ -15,27 +15,6 @@ Backend-Calculated Precision: Utilizes Intersight’s internal Druid engine to p
 
 Intelligent Discovery: Automatically detects single-controller (e.g., L40S) and multi-controller (e.g., A16) GPUs, mapping physical slot IDs (e.g., PCIe-Node2-GPU1) to their respective controllers.
 
-License Aware: Compatible with both Intersight Essentials (10-min interval) and Advantage (1-min interval) tiers.
-
-The precision of your monitoring depends on your Cisco Intersight license tier. You must align the granularity_minutes setting in the gpu_collector.py script with your license to ensure data consistency:
-
-
-Intersight Essentials (Default):
-
-Interval: 10 minutes.
-
-Configuration: Set "granularity_minutes": 10 in the CONFIG dictionary.
-
-Note: Data is aggregated locally by the Device Connector before being sent to the cloud.
-
-Intersight Advantage:
-
-Interval: 1 minute.
-
-Configuration: Change "granularity_minutes": 1 in the CONFIG dictionary.
-
-Benefit: This allows for high-resolution 1-minute charts in Zabbix, perfect for identifying short-lived performance spikes.
-
 
 Zabbix 7.x Native: Fully compatible with Zabbix 7.0, utilizing native JSON preprocessing and Trapper items for efficient data ingestion.
 
@@ -113,6 +92,44 @@ Thermal: GPU Core temperature (°C).
 Clocks: Graphics and Memory clock speeds (MHz).
 
 PCIe Status: Current Link Generation and Width.
+
+
+
+⚙️ Configuration Details
+
+Before running the collector script, you must update the CONFIG dictionary in gpu_collector.py.
+
+
+⚠️ Critical: Zabbix Host Matching
+
+The value for "zabbix_host" must exactly match the "Host name" of the device in your Zabbix Web UI.
+
+
+This value is case-sensitive.
+It is not necessarily the system's FQDN or IP address; it is the logical name you assigned when creating the Host in Zabbix.
+If this does not match perfectly, zabbix_sender will return processed: 0; failed: X, and your metrics will not update.
+
+
+ 🔑 License Aware: Compatible with both Intersight Essentials (10-min interval) and Advantage (1-min interval) tiers.
+
+The precision of your monitoring depends on your Cisco Intersight license tier. You must align the granularity_minutes setting in the gpu_collector.py script with your license to ensure data consistency:
+
+
+Intersight Essentials (Default):
+
+Interval: 10 minutes.
+
+Configuration: Set "granularity_minutes": 10 in the CONFIG dictionary.
+
+Note: Data is aggregated locally by the Device Connector before being sent to the cloud.
+
+Intersight Advantage:
+
+Interval: 1 minute.
+
+Configuration: Change "granularity_minutes": 1 in the CONFIG dictionary.
+
+Benefit: This allows for high-resolution 1-minute charts in Zabbix, perfect for identifying short-lived performance spikes.
 
 
 🛡️🕒 Historical Data Integrity (Zabbix Trapper)
