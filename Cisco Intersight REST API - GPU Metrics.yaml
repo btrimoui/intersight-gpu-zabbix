@@ -1,0 +1,542 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 879904809f7b46e89372f02f2a99aaaf
+      name: API
+    - uuid: 7df96b18c230490a9a0a9e2307226338
+      name: Templates
+  templates:
+    - uuid: 2f3a9b2c6d4e4a7b8c9d0e1f2a3b4c5e
+      template: 'Cisco Intersight REST API - GPU Metrics'
+      name: 'Cisco Intersight REST API - GPU Metrics'
+      groups:
+        - name: API
+        - name: Templates
+      items:
+        - uuid: 4b5c7d9e2f304b4c81b2c3d4e5f60719
+          name: 'Server GPUs'
+          type: SCRIPT
+          key: intersight.gpus
+          delay: 1h
+          history: 14d
+          value_type: TEXT
+          trends: '0'
+          params: |
+            /* ============================
+            Cisco Intersight - GPU Inventory
+            Zabbix 7.x
+            OAuth2 Client Credentials
+            Optional Proxy
+            Pagination support
+            ============================ */
+            
+            function base64Encode(input) {
+                var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+                var output = '';
+                var i = 0;
+            
+                while (i < input.length) {
+                    var c1 = input.charCodeAt(i++);
+                    var c2 = input.charCodeAt(i++);
+                    var c3 = input.charCodeAt(i++);
+            
+                    var e1 = c1 >> 2;
+                    var e2 = ((c1 & 3) << 4) | (c2 >> 4);
+                    var e3 = ((c2 & 15) << 2) | (c3 >> 6);
+                    var e4 = c3 & 63;
+            
+                    if (isNaN(c2)) e3 = e4 = 64;
+                    else if (isNaN(c3)) e4 = 64;
+            
+                    output += chars.charAt(e1) +
+                              chars.charAt(e2) +
+                              chars.charAt(e3) +
+                              chars.charAt(e4);
+                }
+                return output;
+            }
+            
+            var proxy = '{$INTERSIGHT.PROXY}';
+            
+            var req = new HttpRequest();
+            if (proxy !== '') {
+                req.setProxy(proxy);
+            }
+            
+            var tokenReq = new HttpRequest();
+            if (proxy !== '') {
+                tokenReq.setProxy(proxy);
+            }
+            
+            tokenReq.addHeader('Content-Type: application/x-www-form-urlencoded');
+            
+            var basicAuth = 'Basic ' + base64Encode(
+                '{$INTERSIGHT.OAUTH.CLIENT_ID}' + ':' +
+                '{$INTERSIGHT.OAUTH.CLIENT_SECRET}'
+            );
+            
+            tokenReq.addHeader('Authorization: ' + basicAuth);
+            
+            var tokenResp = tokenReq.post(
+                '{$INTERSIGHT.OAUTH.TOKEN_URL}',
+                'grant_type=client_credentials'
+            );
+            
+            var tokenData = JSON.parse(tokenResp);
+            
+            if (!tokenData.access_token) {
+                throw 'OAuth token error: ' + tokenResp;
+            }
+            
+            req.addHeader('Authorization: Bearer ' + tokenData.access_token);
+            
+            var baseUrl = '{$INTERSIGHT.API.BASE_URL}' +
+            '/api/v1/graphics/Cards?' +
+            '$inlinecount=allpages&' +
+            '$top=500&' +
+            '$select=Moid,Model,Serial,GpuId,OperState,MaxPcieLinkSpeed,MaxPcieLinkWidth,GraphicsControllers,Ancestors';
+            
+            var allResults = [];
+            var skip = 0;
+            var totalCount = null;
+            
+            while (true) {
+                var resp = JSON.parse(req.get(baseUrl + '&$skip=' + skip));
+            
+                if (totalCount === null && resp.Count !== undefined) {
+                    totalCount = resp.Count;
+                }
+            
+                if (!resp.Results || resp.Results.length === 0) {
+                    break;
+                }
+            
+                allResults = allResults.concat(resp.Results);
+            
+                if (resp.Results.length < 500) {
+                    break;
+                }
+            
+                skip += 500;
+            }
+            
+            var bladeMap = {};
+            var bladeSkip = 0;
+            
+            while (true) {
+                var bladeResp = JSON.parse(req.get(
+                    '{$INTERSIGHT.API.BASE_URL}' +
+                    '/api/v1/compute/Blades?$select=Moid,Name&$top=500&$skip=' + bladeSkip
+                ));
+            
+                if (!bladeResp.Results || bladeResp.Results.length === 0) {
+                    break;
+                }
+            
+                for (var i = 0; i < bladeResp.Results.length; i++) {
+                    bladeMap[bladeResp.Results[i].Moid] = bladeResp.Results[i].Name;
+                }
+            
+                if (bladeResp.Results.length < 500) {
+                    break;
+                }
+            
+                bladeSkip += 500;
+            }
+            
+            for (var i = 0; i < allResults.length; i++) {
+                var gpu = allResults[i];
+            
+                if (gpu.Ancestors) {
+                    for (var j = 0; j < gpu.Ancestors.length; j++) {
+                        var a = gpu.Ancestors[j];
+            
+                        if (a.ObjectType === "compute.Blade") {
+                            gpu.ServerName = bladeMap[a.Moid] || a.Moid;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            Zabbix.log(4,
+            'Intersight graphics/Cards: fetched=' + allResults.length +
+            (totalCount !== null ? ' total=' + totalCount : '')
+            );
+            
+            return JSON.stringify({
+              Count: totalCount,
+              Results: allResults
+            });
+          timeout: 60s
+          triggers:
+            - uuid: 5c6d8eaf30414c5d82c3d4e5f607182a
+              expression: 'nodata(/Cisco Intersight REST API - GPU Metrics/intersight.gpus,2h)=1'
+              name: 'Intersight API not reachable'
+              event_name: 'Critical - Intersight API {$INTERSIGHT.API.BASE_URL} not reachable'
+              priority: DISASTER
+      discovery_rules:
+        - uuid: 6d7e9fb041524d6e83b4c5d6e7f8091b
+          name: 'GPU discovery'
+          type: DEPENDENT
+          key: gpu.discovery
+          delay: '0'
+          item_prototypes:
+            - uuid: b22a1111b2224333a444e555f6668881
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} GPU Clock Speed - Max (10m)'
+              type: TRAP
+              key: 'gpu.clockspeed.bucketmax[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '!MHz'
+            - uuid: b22a1111b2224333a444e555f6668882
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} GPU Clock Speed - Min (10m)'
+              type: TRAP
+              key: 'gpu.clockspeed.bucketmin[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '!MHz'
+            - uuid: 8f91b2d263744f8085b6c7d8e9f01a2c
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} GPU Clock Speed - Spec Max'
+              type: CALCULATED
+              key: 'gpu.clockspeed.max[{#COMPOSITE_ID}]'
+              value_type: FLOAT
+              units: '!MHz'
+              params: '0+{$GPU.CLOCK.MAX:"{#GPU_MODEL}"}'
+            - uuid: 7e80a1c152634e7f84c5d6e7f8091a2c
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} GPU Clock Speed - Avg (10m)'
+              type: TRAP
+              key: 'gpu.clockspeed[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '!MHz'
+            - uuid: b22a1111b2224333a444e555f6668883
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Memory Clock Speed - Max (10m)'
+              type: TRAP
+              key: 'gpu.memclockspeed.bucketmax[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '!MHz'
+            - uuid: b22a1111b2224333a444e555f6668884
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Memory Clock Speed - Min (10m)'
+              type: TRAP
+              key: 'gpu.memclockspeed.bucketmin[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '!MHz'
+            - uuid: a1a3d4f4859641a287b8c9d0e1f2a3b5
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Memory Clock Speed - Spec Max'
+              type: CALCULATED
+              key: 'gpu.memclockspeed.max[{#COMPOSITE_ID}]'
+              delay: 1d
+              value_type: FLOAT
+              units: '!MHz'
+              params: '0+{$GPU.MEMCLOCK.MAX:"{#GPU_MODEL}"}'
+            - uuid: 9092c3e37485409186c7d8e9f01a2b3d
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Memory Clock Speed - Avg (10m)'
+              type: TRAP
+              key: 'gpu.memclockspeed[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '!MHz'
+            - uuid: b22a1111b2224333a444e555f6668885
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Memory Used - Max (10m)'
+              type: TRAP
+              key: 'gpu.memused.bucketmax[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '%'
+            - uuid: b22a1111b2224333a444e555f6668886
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Memory Used - Min (10m)'
+              type: TRAP
+              key: 'gpu.memused.bucketmin[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '%'
+            - uuid: b2b4e50696a742b388c9d0e1f2a3b4c6
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Memory Used - Avg (10m)'
+              type: TRAP
+              key: 'gpu.memused[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '%'
+            - uuid: c3c5f617a7b843c489d0e1f2a3b4c5d7
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} PCIe Gen - Spec Max'
+              type: CALCULATED
+              key: 'gpu.pcie.card.max.gen[{#COMPOSITE_ID}]'
+              delay: 1d
+              units: gen
+              params: '0+{$GPU.PCIE.MAX.GEN:"{#GPU_MODEL}"}'
+            - uuid: d4d60728b8c944d58ae1f2a3b4c5d6e8
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} PCIe Width - Spec Max'
+              type: CALCULATED
+              key: 'gpu.pcie.card.max.width[{#COMPOSITE_ID}]'
+              delay: 1d
+              units: lanes
+              params: '0+{$GPU.PCIE.MAX.WIDTH:"{#GPU_MODEL}"}'
+            - uuid: b22a1111b2224333a444e555f6668887
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} PCIe Gen - Min (10m)'
+              type: TRAP
+              key: 'gpu.pcie.gen.bucketmin[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: gen
+            - uuid: e5e71839c9da45e68bf2a3b4c5d6e7f9
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} PCIe Gen - Current (10m)'
+              type: TRAP
+              key: 'gpu.pcie.gen[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: gen
+            - uuid: b22a1111b2224333a444e555f6668888
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} PCIe Width - Min (10m)'
+              type: TRAP
+              key: 'gpu.pcie.width.bucketmin[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: lanes
+            - uuid: f6f8294ad0eb46f78ca3b4c5d6e7f80a
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} PCIe Width - Current (10m)'
+              type: TRAP
+              key: 'gpu.pcie.width[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: lanes
+            - uuid: b22a1111b2224333a444e555f6668889
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Power - Max (10m)'
+              type: TRAP
+              key: 'gpu.power.bucketmax[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: W
+            - uuid: b22a1111b2224333a444e555f666888a
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Power - Min (10m)'
+              type: TRAP
+              key: 'gpu.power.bucketmin[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: W
+            - uuid: 17093a5be1fc47088dd4c5d6e7f8091b
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Power - Avg (10m)'
+              type: TRAP
+              key: 'gpu.power[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: W
+            - uuid: 1a1b4c6cf20d48198ee5d6e7f8091a2c
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} State'
+              type: DEPENDENT
+              key: 'gpu.state[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.Results[?(@.Moid=="{#GPU_MOID}")].OperState.first()'
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: intersight.gpus
+            - uuid: b22a1111b2224333a444e555f666888b
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Temperature - Max (10m)'
+              type: TRAP
+              key: 'gpu.temp.bucketmax[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: C
+            - uuid: b22a1111b2224333a444e555f666888c
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Temperature - Min (10m)'
+              type: TRAP
+              key: 'gpu.temp.bucketmin[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: C
+            - uuid: 2b2c5d7d031e492a8ff6e7f8091a2b3d
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Temperature - Avg (10m)'
+              type: TRAP
+              key: 'gpu.temp[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: C
+            - uuid: b22a1111b2224333a444e555f666888d
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Utilization - Max (10m)'
+              type: TRAP
+              key: 'gpu.utilization.bucketmax[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '%'
+            - uuid: b22a1111b2224333a444e555f666888e
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Utilization - Min (10m)'
+              type: TRAP
+              key: 'gpu.utilization.bucketmin[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '%'
+            - uuid: 3c3d6e8e142f4a3ba0a7f8091a2b3c4e
+              name: '{#SERVER_NAME} {#GPU_MODEL} {#GPU_ID} Utilization - Avg (10m)'
+              type: TRAP
+              key: 'gpu.utilization[{#COMPOSITE_ID}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '%'
+          master_item:
+            key: intersight.gpus
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var out = [];
+                  
+                  for (var i = 0; i < data.Results.length; i++) {
+                      var gpu = data.Results[i];
+                      var blade = "";
+                  
+                      if (gpu.Ancestors) {
+                          for (var j = 0; j < gpu.Ancestors.length; j++) {
+                              if (gpu.Ancestors[j].ObjectType === "compute.Blade") {
+                                  blade = gpu.Ancestors[j].Moid;
+                                  break;
+                              }
+                          }
+                      }
+                  
+                      var model = gpu.Model;
+                      if (!model || model === "") {
+                          model = "Unknown-GPU";
+                      }
+                  
+                      var ctrlCount = 0;
+                      if (gpu.GraphicsControllers &&
+                          Object.prototype.toString.call(gpu.GraphicsControllers) === '[object Array]') {
+                          ctrlCount = gpu.GraphicsControllers.length;
+                      }
+                  
+                      if (ctrlCount > 1) {
+                          for (var c = 1; c <= ctrlCount; c++) {
+                              out.push({
+                                "{#SERVER_NAME}": gpu.ServerName,
+                                "{#GPU_ID}": gpu.GpuId + "_C" + c, 
+                                "{#GPU_MODEL}": model,
+                                "{#GPU_MOID}": gpu.Moid,
+                                "{#BLADE_MOID}": blade,
+                                "{#GPU_CARD_ID}": gpu.GpuId,
+                                "{#CTRL_ID}": String(c),
+                                "{#CTRL_COUNT}": String(ctrlCount),
+                                "{#COMPOSITE_ID}": blade + "_" + gpu.GpuId + "_C" + c
+                              });
+                          }
+                      } else {
+                          out.push({
+                            "{#SERVER_NAME}": gpu.ServerName,
+                            "{#GPU_ID}": gpu.GpuId,
+                            "{#GPU_MODEL}": model,
+                            "{#GPU_MOID}": gpu.Moid,
+                            "{#BLADE_MOID}": blade,
+                            "{#GPU_CARD_ID}": gpu.GpuId,
+                            "{#CTRL_ID}": "",
+                            "{#CTRL_COUNT}": String(ctrlCount > 0 ? ctrlCount : 1),
+                            "{#COMPOSITE_ID}": blade + "_" + gpu.GpuId
+                          });
+                      }
+                  }
+                  
+                  return JSON.stringify(out);
+      macros:
+        - macro: '{$GPU.CLOCK.MAX:"UCSC-GPU-A10"}'
+          value: '1695'
+        - macro: '{$GPU.CLOCK.MAX:"UCSC-GPU-A16"}'
+          value: '1695'
+        - macro: '{$GPU.CLOCK.MAX:"UCSC-GPU-A40"}'
+          value: '1740'
+        - macro: '{$GPU.CLOCK.MAX:"UCSC-GPU-A100-80"}'
+          value: '1410'
+        - macro: '{$GPU.CLOCK.MAX:"UCSC-GPU-L4"}'
+          value: '2040'
+        - macro: '{$GPU.CLOCK.MAX:"UCSC-GPU-L40S"}'
+          value: '2520'
+        - macro: '{$GPU.CLOCK.MAX:"UCSC-GPU-T4-16"}'
+          value: '1590'
+        - macro: '{$GPU.CLOCK.MAX:"UCSX-GPU-FLEX140"}'
+          value: '1950'
+        - macro: '{$GPU.CLOCK.MAX:"UCSX-GPU-H100-80"}'
+          value: '1755'
+        - macro: '{$GPU.CLOCK.MAX:"UCSX-GPU-L40S"}'
+          value: '2520'
+        - macro: '{$GPU.CLOCK.MAX:"Unknown-GPU"}'
+          value: '0'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSC-GPU-A10"}'
+          value: '6251'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSC-GPU-A16"}'
+          value: '6251'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSC-GPU-A40"}'
+          value: '7251'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSC-GPU-A100-80"}'
+          value: '1600'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSC-GPU-L4"}'
+          value: '6251'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSC-GPU-L40S"}'
+          value: '9001'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSC-GPU-T4-16"}'
+          value: '5001'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSX-GPU-FLEX140"}'
+          value: '2000'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSX-GPU-H100-80"}'
+          value: '2619'
+        - macro: '{$GPU.MEMCLOCK.MAX:"UCSX-GPU-L40S"}'
+          value: '9001'
+        - macro: '{$GPU.MEMCLOCK.MAX:"Unknown-GPU"}'
+          value: '0'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSC-GPU-A10"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSC-GPU-A16"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSC-GPU-A40"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSC-GPU-A100-80"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSC-GPU-L4"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSC-GPU-L40S"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSC-GPU-T4-16"}'
+          value: '3'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSX-GPU-FLEX140"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSX-GPU-H100-80"}'
+          value: '5'
+        - macro: '{$GPU.PCIE.MAX.GEN:"UCSX-GPU-L40S"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.GEN:"Unknown-GPU"}'
+          value: '0'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSC-GPU-A10"}'
+          value: '16'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSC-GPU-A16"}'
+          value: '4'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSC-GPU-A40"}'
+          value: '16'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSC-GPU-A100-80"}'
+          value: '16'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSC-GPU-L4"}'
+          value: '16'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSC-GPU-L40S"}'
+          value: '16'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSC-GPU-T4-16"}'
+          value: '16'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSX-GPU-FLEX140"}'
+          value: '8'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSX-GPU-H100-80"}'
+          value: '16'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"UCSX-GPU-L40S"}'
+          value: '16'
+        - macro: '{$GPU.PCIE.MAX.WIDTH:"Unknown-GPU"}'
+          value: '0'
+        - macro: '{$INTERSIGHT.API.BASE_URL}'
+          value: 'https://eu-central-1.intersight.com'
+        - macro: '{$INTERSIGHT.OAUTH.CLIENT_ID}'
+          type: SECRET_TEXT
+        - macro: '{$INTERSIGHT.OAUTH.CLIENT_SECRET}'
+          type: SECRET_TEXT
+        - macro: '{$INTERSIGHT.OAUTH.TOKEN_URL}'
+          value: 'https://eu-central-1.intersight.com/iam/token'
+        - macro: '{$INTERSIGHT.PROXY}'
