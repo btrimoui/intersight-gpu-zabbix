@@ -60,9 +60,13 @@ Environment Variables: The Python script is designed to detect system environmen
 Import the Cisco_Intersight_GPU_Metrics.yaml file into Zabbix (Data collection > Templates > Import).
 Link the template to your Cisco Intersight Host in Zabbix.
 Configure the following Macros at the Host level:
+
 {$INTERSIGHT.API.BASE_URL}: e.g., https://eu-central-1.intersight.com
+
 {$INTERSIGHT.OAUTH.CLIENT_ID}: Your API Key ID.
+
 {$INTERSIGHT.OAUTH.CLIENT_SECRET}: Your API Secret Key.
+
 {$INTERSIGHT.PROXY}: (Optional) Your corporate proxy address.
 
 2. Deploy the Python Collector
