@@ -126,3 +126,9 @@ This ensures that the Zabbix graphs perfectly align with the Intersight timeline
 
 Backfilling Support: Because we preserve the original timestamps, the script can retrieve and "backfill" multiple data points from a single query (e.g., fetching 60 minutes of 10-minute buckets). 
 Zabbix will correctly plot all six points at their respective historical times rather than bunching them up at the current time.
+
+## ⚖️ License
+
+This project is licensed under the **MIT License**. See the LICENSE file for the full text. 
+
+*Disclaimer: This is a community-contributed project. It is not an official Cisco product. Use at your own risk.*
